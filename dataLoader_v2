@@ -1,0 +1,24 @@
+# Edit the eegDataPath and the markerPath with the paths to their respective files that were outputted post-experiment by SDK
+
+import MySQLdb
+import csv
+import sys
+from loaderFuncs import *
+
+eegDataPath = '2019_05_18_eeg_log.csv'
+markerPath = 'T_15_54_43_markers_log.txt'
+
+hostname = 'database-1.cmneqpbh1gul.us-east-2.rds.amazonaws.com'
+username = 'petaladmin'
+password = 'PETALPASS'
+database = 'petalEEG'
+               
+connection = MySQLdb.connect(host = hostname, user = username, passwd = password, db = database)
+
+subject = '1'
+session = maxSessionID(connection) + 1
+
+eegHeaders, eegRecords = loadEEG(eegDataPath, 4)
+markerHeaders, markerRecords = applyMarkers(eegRecords, eegHeaders, markerPath)
+preparedHeaders, preparedRecords = prepareExpRecords(markerRecords, markerHeaders, subject, session)
+tableInsert('EXP_RECORDS', preparedHeaders, preparedRecords, connection, batchFlag = True)
