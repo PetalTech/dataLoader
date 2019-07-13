@@ -1,0 +1,80 @@
+import MySQLdb
+import csv
+import sys
+import numpy as np
+
+def tableInsert(table, columns, values, conn, batchFlag = False):
+    cur = conn.cursor()
+    
+    colHeaders = ','.join(columns)
+    if batchFlag == True:
+        valPlaceholder = ','.join(["%s" for col in columns])
+        query = "INSERT INTO " + table + " (" + colHeaders + ") VALUES (" + valPlaceholder + ")"
+        cur.executemany(query, values)
+    else:
+        query = "INSERT INTO " + table + " (" + colHeaders + ") VALUES (" + values + ")"
+        cur.execute(query)
+        
+    conn.commit()
+    
+def maxSessionID(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT max(session_id) FROM SESSIONS")
+    return cur.fetchall()[0][0]
+    
+def prepareExpRecords(eegRecords, eegHeaders, subject, session):
+    preparedHeaders = eegHeaders + ['SUBJECT_ID', 'SESSION_ID']
+    preparedRow = []
+    for row in eegRecords:
+        preparedRow.append(row + [subject, session])
+        
+    return preparedHeaders, preparedRow
+
+def loadEEG(eegPath, numChannels):
+    eegRecords = []
+    with open(eegPath, newline='') as inputfile:
+        reader = csv.reader(inputfile)
+        headers = next(reader)
+        
+        lslTimestampHeader = [headers[1]]
+        channelHeaders = headers[3:]
+        
+        cleansedHeaders = lslTimestampHeader + channelHeaders
+        
+        for row in reader:
+            lslTimestamp = [row[1]]
+            channelData = [row[i] for i in range(3, 3 + numChannels)]
+            eegRecords.append(lslTimestamp + channelData)
+            
+    return cleansedHeaders, eegRecords
+    
+def applyMarkers(eegRecords, eegHeaders, markerPath):
+    eventRecords = []
+    with open(markerPath, newline='') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            eventRecords.append([row[0],float(row[1])])
+            
+    dataRecords = [['888'] + row for row in eegRecords]
+            
+    dataRecords.sort(key=lambda x: x[1])
+    eventRecords.sort(key=lambda x: x[1])
+
+    prevKey = 0
+    for eventRow in eventRecords:
+        prevDifference = 'null'
+        eventTime = eventRow[1]
+        for dataRow in dataRecords[prevKey:]:
+            dataTime = dataRow[1]
+            difference = abs(float(eventTime) - float(dataTime))
+            if prevDifference == 'null':
+                pass
+            elif prevKey > 0 and difference > prevDifference:
+                dataRecords[prevKey - 1][0] = eventRow[0]
+                break
+
+            prevKey += 1
+            prevDifference = difference
+    
+    markerHeaders = ['MARKER'] + eegHeaders
+    return markerHeaders, np.asarray(dataRecords).tolist()
